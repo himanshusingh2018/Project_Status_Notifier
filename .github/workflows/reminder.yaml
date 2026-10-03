@@ -14,10 +14,8 @@ jobs:
         with:
         server_address: smtp.gmail.com
         server_port: 465
-        username: 
-        ${{ secrets.himanshu720 }}
-        password: 
-        ${{ secrets.csxasxhsjnfevadz }}
+        username: ${{ secrets.himanshu720 }}
+        password: ${{ secrets.csxasxhsjnfevadz }}
         subject: 'Pending Tasks Reminder'
         body: 'Please check your GitHub Board for pending tasks.'
         to: 'himanshu720@gmail.com'
