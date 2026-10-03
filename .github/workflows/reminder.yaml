@@ -1,0 +1,22 @@
+name: Reminder
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Runs every 4 hours automatically
+  workflow_dispatch:      # Allows you to click a button in GitHub to test it instantly
+
+jobs:
+  send_status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send email directly from Gmail
+        uses: action-pack/send-mail@v1
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.himanshu720 }}
+          password: ${{ secrets.csxasxhsjnfevadz }}
+          subject: 'Pending Tasks Reminder'
+          body: 'Please check your GitHub Board for pending tasks.'
+          to: 'himanshu720@gmail.com'
+          from: 'GitHub Actions Reminder'
