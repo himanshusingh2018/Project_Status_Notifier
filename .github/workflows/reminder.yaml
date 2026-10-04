@@ -78,11 +78,13 @@ jobs:
             '
           }
 
-          PENDING_FILTER='["Todo", "In Progress"]'
-          COMPLETED_FILTER='["Done"]'
+          TODO_FILTER='["Todo"]'
+          IN_PROGRESS_FILTER='["In Progress"]'
+          DONE_FILTER='["Done"]'
 
-          PENDING_HTML=$(render_html_list "$PENDING_FILTER")
-          COMPLETED_HTML=$(render_html_list "$COMPLETED_FILTER")
+          TODO_HTML=$(render_html_list "$TODO_FILTER")
+          IN_PROGRESS_HTML=$(render_html_list "$IN_PROGRESS_FILTER")
+          DONE_HTML=$(render_html_list "$DONE_FILTER")
           REPORT_DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
 
           cat <<EOF > email_body.html
@@ -93,7 +95,10 @@ jobs:
             <style>
               body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #24292f; }
               h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 6px; }
-              h3 { margin-top: 20px; margin-bottom: 6px; color: #0969da; }
+              h3 { margin-top: 20px; margin-bottom: 6px; }
+              .todo-header { color: #57606a; }
+              .in-progress-header { color: #bf8700; }
+              .done-header { color: #1a7f37; }
               ul { list-style-type: none; padding-left: 0; }
               li { margin-bottom: 6px; }
               a { color: #0969da; text-decoration: none; }
@@ -105,14 +110,19 @@ jobs:
             <h2>Project #7 Status Report</h2>
             <p><strong>Run Time:</strong> ${REPORT_DATE}</p>
 
-            <h3>Pending</h3>
+            <h3 class="todo-header">📋 To Do</h3>
             <ul>
-              ${PENDING_HTML}
+              ${TODO_HTML}
             </ul>
 
-            <h3>Completed</h3>
+            <h3 class="in-progress-header">⏳ In Progress</h3>
             <ul>
-              ${COMPLETED_HTML}
+              ${IN_PROGRESS_HTML}
+            </ul>
+
+            <h3 class="done-header">✅ Completed</h3>
+            <ul>
+              ${DONE_HTML}
             </ul>
           </body>
           </html>
