@@ -1,148 +1,16 @@
-name: Daily GitHub Project Reminder
+name: Scheduled workflow
 
 on:
+  workflow_dispatch:
   schedule:
-    - cron: '0 12 * * *' # Every morning at 12:00 UTC (07:00 EST)
-  workflow_dispatch:      # Allows manual trigger from the GitHub Actions tab
+    - cron: '*/10 * * * *'
 
 jobs:
-  fetch-and-notify:
+  demo:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
-    steps:
-      - name: Fetch and Format Project Items
-        id: generate-report
-        env:
-          GH_TOKEN: ${{ secrets.PROJECT_STATUS_PAT }}
-          GITHUB_USER: "himanshusingh2018"
-          PROJECT_NUMBER: 7
+    steps: 
+      - name: Log time
         run: |
-          set -euo pipefail
-
-          QUERY='
-          query($user: String!, $number: Int!) {
-            user(login: $user) {
-              projectV2(number: $number) {
-                title
-                items(first: 100) {
-                  nodes {
-                    fieldValueByName(name: "Status") {
-                      ... on ProjectV2ItemFieldSingleSelectValue {
-                        name
-                      }
-                    }
-                    content {
-                      ... on Issue {
-                        title
-                        url
-                      }
-                      ... on PullRequest {
-                        title
-                        url
-                      }
-                      ... on DraftIssue {
-                        title
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }'
-
-          # Execute GraphQL query via GitHub CLI
-          RESPONSE=$(gh api graphql \
-            -F user="$GITHUB_USER" \
-            -F number="$PROJECT_NUMBER" \
-            -f query="$QUERY")
-
-          # Parse and extract items into a clean JSON array
-          ITEMS_JSON=$(echo "$RESPONSE" | jq '[
-            .data.user.projectV2.items.nodes[]
-            | select(.content != null)
-            | {
-                status: (.fieldValueByName.name // "No Status"),
-                title: .content.title,
-                url: (.content.url // "")
-              }
-          ]')
-
-          # Helper function to render an HTML block for a given status group
-          render_section() {
-            local target_status="$1"
-            local list_items
-            list_items=$(echo "$ITEMS_JSON" | jq -r --arg status "$target_status" '
-              map(select(.status == $status))
-              | if length == 0 then
-                  "<li><em>No items currently in this column.</em></li>"
-                else
-                  map(
-                    if .url != "" then
-                      "<li><a href=\"" + .url + "\">" + .title + "</a></li>"
-                    else
-                      "<li>" + .title + "</li>"
-                    end
-                  ) | join("\n")
-                end
-            ')
-            echo "$list_items"
-          }
-
-          IN_PROGRESS_LIST=$(render_section "In Progress")
-          TODO_LIST=$(render_section "Todo")
-          DONE_LIST=$(render_section "Done")
-
-          REPORT_DATE=$(date -u +"%Y-%m-%d")
-
-          # Build HTML Email content directly into an output file to avoid escaping issues
-          cat <<EOF > email_body.html
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #24292f; }
-              h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 6px; }
-              h3 { margin-top: 24px; margin-bottom: 8px; color: #0969da; }
-              ul { padding-left: 20px; }
-              li { margin-bottom: 4px; }
-              a { color: #0969da; text-decoration: none; }
-              a:hover { text-decoration: underline; }
-              em { color: #57606a; }
-            </style>
-          </head>
-          <body>
-            <h2>Daily Project Reminder — ${REPORT_DATE}</h2>
-
-            <h3>📌 In Progress</h3>
-            <ul>
-              ${IN_PROGRESS_LIST}
-            </ul>
-
-            <h3>📋 Pending / Todo</h3>
-            <ul>
-              ${TODO_LIST}
-            </ul>
-
-            <h3>✅ Completed / Done</h3>
-            <ul>
-              ${DONE_LIST}
-            </ul>
-          </body>
-          </html>
-          EOF
-
-      - name: Send Summary Email via Gmail SMTP
-        uses: dawidd6/action-send-mail@v4
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Daily GitHub Project Digest - Project #7"
-          to: himanshu720@gmail.com
-          from: "GitHub Reminder <${{ secrets.SMTP_USERNAME }}>"
-          html_body: file://email_body.html
+          current_date_time=$(date)
+          echo "Current date and time: $current_date_time"
