@@ -1,22 +1,105 @@
-name: Reminder
+name: Daily Project Status Notifier
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Runs every 4 hours automatically
-  workflow_dispatch:      # Allows you to click a button in GitHub to test it instantly
+    # 7:00 EST  -> 12:00 UTC
+    # 12:00 EST -> 17:00 UTC
+    # 16:00 EST -> 21:00 UTC
+    - cron: '0 12,17,21 * * *'
+  workflow_dispatch: # Allows manual trigger for testing
 
 jobs:
-  send_status:
+  notify-status:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      repository-projects: read
+      issues: read
+
     steps:
-      - name: Send email directly from Gmail
-        uses: action-pack/send-mail@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch Project V2 Tasks
+        id: fetch-tasks
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_STATUS_PAT }}
+          ORGANIZATION: "himanshu720" # e.g., "my-org" or "my-username"
+          PROJECT_NUMBER: 7                           # Replace with your Project V2 number
+        run: |
+          # GraphQL query to retrieve items and status column names from GitHub Project V2
+          QUERY='
+          query($org: String!, $number: Int!) {
+            organization(login: $org) {
+              projectV2(number: $number) {
+                items(first: 100) {
+                  nodes {
+                    fieldValueByName(name: "Status") {
+                      ... on ProjectV2ItemFieldSingleSelectValue {
+                        name
+                      }
+                    }
+                    content {
+                      ... on Issue {
+                        title
+                        url
+                      }
+                      ... on PullRequest {
+                        title
+                        url
+                      }
+                      ... on DraftIssue {
+                        title
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }'
+
+          # Execute GraphQL query via gh api
+          JSON_RESPONSE=$(gh api graphql -f query="$QUERY" -F org="$ORGANIZATION" -F number="$PROJECT_NUMBER")
+
+          # Parse and group items by Status column
+          TODO_TASKS=$(echo "$JSON_RESPONSE" | jq -r '
+            .data.organization.projectV2.items.nodes[]
+            | select(.fieldValueByName.name == "Todo")
+            | "- " + (.content.title // "Untitled") + (if .content.url then " (" + .content.url + ")" else "" end)
+          ')
+
+          IN_PROGRESS_TASKS=$(echo "$JSON_RESPONSE" | jq -r '
+            .data.organization.projectV2.items.nodes[]
+            | select(.fieldValueByName.name == "In Progress")
+            | "- " + (.content.title // "Untitled") + (if .content.url then " (" + .content.url + ")" else "" end)
+          ')
+
+          # Construct email body
+          {
+            echo "EMAIL_BODY<<EOF"
+            echo "## 📌 In Progress"
+            if [ -n "$IN_PROGRESS_TASKS" ]; then
+              echo "$IN_PROGRESS_TASKS"
+            else
+              echo "_No items currently in progress._"
+            fi
+            echo ""
+            echo "## 📋 Todo"
+            if [ -n "$TODO_TASKS" ]; then
+              echo "$TODO_TASKS"
+            else
+              echo "_No items currently in todo._"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Send Summary Email
+        uses: himanshusingh2018/Project_Status_Notifier@v1 # Adjust action ref/tag as needed
         with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.himanshu720 }}
-          password: ${{ secrets.cdimwzdsjqxjayhp }}
-          subject: 'Pending Tasks Reminder'
-          body: 'Please check your GitHub Board for pending tasks.'
-          to: 'himanshu720@gmail.com'
-          from: 'GitHub Actions Reminder'
+          to: "himanshu720@gmail.com"
+          subject: "Daily Project Board Status Update"
+          body: ${{ env.EMAIL_BODY }}
+        env:
+          # Include any SMTP or API credentials required by your custom action
+          SMTP_USERNAME: ${{ secrets.himanshu720@gmail.com }}
+          SMTP_PASSWORD: ${{ secrets.cdimwzdsjqxjayhp }}
