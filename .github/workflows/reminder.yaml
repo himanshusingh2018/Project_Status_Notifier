@@ -101,5 +101,4 @@ jobs:
           body: ${{ env.EMAIL_BODY }}
         env:
           # Include any SMTP or API credentials required by your custom action
-          SMTP_USERNAME: ${{ secrets.himanshu720@gmail.com }}
-          SMTP_PASSWORD: ${{ secrets.cdimwzdsjqxjayhp }}
+          SMTP_USERNAME: ${{ secrets.himanshu720@gmail.com }} SMTP_PASSWORD: ${{ secrets.cdimwzdsjqxjayhp }}
