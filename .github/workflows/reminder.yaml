@@ -120,7 +120,7 @@ jobs:
 
       - name: Send Email via Gmail SSL
         env:
-          SMTP_USER: ${{ secrets.SMTP_USERNAME }}
+          SMTP_USER: "himanshu720@gmail.com"
           SMTP_PASS: ${{ secrets.SMTP_PASSWORD }}
           TO_EMAIL: "himanshu720@gmail.com"
         run: |
@@ -135,11 +135,8 @@ jobs:
           password = os.environ.get("SMTP_PASS", "").strip()
           to_addr = os.environ.get("TO_EMAIL", "").strip()
 
-          if not username:
-              print("::error::SMTP_USERNAME secret is missing or empty in Repository Secrets!")
-              sys.exit(1)
           if not password:
-              print("::error::SMTP_PASSWORD secret is missing or empty in Repository Secrets!")
+              print("::error::SMTP_PASSWORD secret is missing or empty in Repository Secrets! Go to Settings -> Secrets and variables -> Actions to add it.")
               sys.exit(1)
 
           with open("email_body.html", "r", encoding="utf-8") as f:
@@ -151,18 +148,18 @@ jobs:
           msg["To"] = to_addr
           msg.attach(MIMEText(html_content, "html", "utf-8"))
 
-          print(f"Connecting to smtp.gmail.com:465 for {username}...")
+          print(f"Connecting to smtp.gmail.com:465 with user {username}...")
           try:
               server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
               server.login(username, password)
               server.sendmail(username, [to_addr], msg.as_string())
               server.quit()
-              print("✅ Email dispatched successfully!")
+              print("✅ Email sent successfully to " + to_addr)
           except smtplib.SMTPAuthenticationError as e:
-              print(f"::error::Gmail rejected login (code {e.smtp_code}): {e.smtp_error.decode('utf-8', errors='ignore')}")
-              print("Make sure your App Password is 16 letters with NO spaces, and 2-Step Verification is ON.")
+              print(f"::error::Gmail login rejected (code {e.smtp_code}): {e.smtp_error.decode('utf-8', errors='ignore')}")
+              print("Please ensure your Google App Password is a valid 16-character code with NO spaces and 2-Step Verification is active.")
               sys.exit(1)
           except Exception as e:
-              print(f"::error::SMTP Failure: {e}")
+              print(f"::error::SMTP error: {e}")
               sys.exit(1)
           EOF
