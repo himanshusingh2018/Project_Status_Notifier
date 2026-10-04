@@ -1,4 +1,4 @@
-name: Print Project Status
+name: Print Work Status
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
       contents: read
 
     steps:
-      - name: Fetch and Print Project Status
+      - name: Fetch and Print Status
         env:
           GH_TOKEN: ${{ secrets.PROJECT_STATUS_PAT }}
           GITHUB_USER: "himanshusingh2018"
@@ -24,7 +24,6 @@ jobs:
           query($user: String!, $number: Int!) {
             user(login: $user) {
               projectV2(number: $number) {
-                title
                 items(first: 100) {
                   nodes {
                     fieldValueByName(name: "Status") {
@@ -51,81 +50,66 @@ jobs:
             }
           }'
 
-          # Fetch data from GitHub GraphQL API
+          # Fetch Project items via GraphQL
           RESPONSE=$(gh api graphql \
             -F user="$GITHUB_USER" \
             -F number="$PROJECT_NUMBER" \
             -f query="$QUERY")
 
-          # Parse items into a structured JSON array
+          # Normalize items into a clean JSON array
           ITEMS_JSON=$(echo "$RESPONSE" | jq '[
             .data.user.projectV2.items.nodes[]
             | select(.content != null)
             | {
-                status: (.fieldValueByName.name // "No Status"),
+                status: (.fieldValueByName.name // "Todo"),
                 title: .content.title,
                 url: (.content.url // "")
               }
           ]')
 
-          # Helper function to print a category in plain text and markdown
-          format_category() {
-            local status_name="$1"
-            echo "$ITEMS_JSON" | jq -r --arg s "$status_name" '
-              map(select(.status == $s))
+          # Helper function to generate numbered console text
+          render_console_list() {
+            local filter_condition="$1"
+            echo "$ITEMS_JSON" | jq -r --argjson cond "$filter_condition" '
+              map(select(.status as $s | $cond | index($s)))
               | if length == 0 then
-                  "  (No items)"
+                  "  (None)"
                 else
-                  map("  - " + .title + (if .url != "" then " (" + .url + ")" else "" end)) | join("\n")
+                  to_entries | map("  " + (.key + 1 | tostring) + ". " + .value.title + (if .value.url != "" then " (" + .value.url + ")" else "" end)) | join("\n")
                 end
             '
           }
 
-          CURRENT_TIME=$(date)
+          # Helper function to generate numbered Markdown list
+          render_markdown_list() {
+            local filter_condition="$1"
+            echo "$ITEMS_JSON" | jq -r --argjson cond "$filter_condition" '
+              map(select(.status as $s | $cond | index($s)))
+              | if length == 0 then
+                  "_None_"
+                else
+                  to_entries | map((.key + 1 | tostring) + ". [" + .value.title + "](" + (if .value.url != "" then .value.url else "#" end) + ")") | join("\n")
+                end
+            '
+          }
 
-          # --- 1. Print formatted output to console log ---
+          PENDING_FILTER='["Todo", "In Progress"]'
+          COMPLETED_FILTER='["Done"]'
+
+          # 1. Output to runner console logs
           echo "================================================"
-          echo "PROJECT STATUS REPORT: Project #7"
-          echo "Run Time: ${CURRENT_TIME}"
-          echo "================================================"
+          echo "Pending"
+          render_console_list "$PENDING_FILTER"
           echo ""
-          echo "📌 IN PROGRESS:"
-          format_category "In Progress"
-          echo ""
-          echo "📋 TODO:"
-          format_category "Todo"
-          echo ""
-          echo "✅ DONE:"
-          format_category "Done"
-          echo ""
+          echo "Completed"
+          render_console_list "$COMPLETED_FILTER"
           echo "================================================"
 
-          # --- 2. Print visual summary to GitHub Actions UI ---
+          # 2. Output to GitHub Summary UI
           cat <<EOF >> $GITHUB_STEP_SUMMARY
-          ## 📊 Project Status: Project #7
-          **Run Date/Time:** ${CURRENT_TIME}
+          ### Pending
+          $(render_markdown_list "$PENDING_FILTER")
 
-          ### 📌 In Progress
-          $(echo "$ITEMS_JSON" | jq -r '
-            map(select(.status == "In Progress"))
-            | if length == 0 then "_No items in progress._"
-              else map("- [" + .title + "](" + (if .url != "" then .url else "#" end) + ")") | join("\n")
-              end
-          ')
-
-          ### 📋 Todo
-          $(echo "$ITEMS_JSON" | jq -r '
-            map(select(.status == "Todo"))
-            | if length == 0 then "_No items pending._"
-              else map("- [" + .title + "](" + (if .url != "" then .url else "#" end) + ")") | join("\n")
-              end
-          ')
-
-          ### ✅ Done
-          $(echo "$ITEMS_JSON" | jq -r '
-            map(select(.status == "Done"))
-            | if length == 0 then "_No completed items._"
-              else map("- [" + .title + "](" + (if .url != "" then .url else "#" end) + ")") | join("\n")
-              end
-          ')
+          ### Completed
+          $(render_markdown_list "$COMPLETED_FILTER")
           EOF
