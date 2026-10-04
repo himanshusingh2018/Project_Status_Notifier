@@ -1,4 +1,4 @@
-name: Scheduled workflow
+name: Print Project Status
 
 on:
   workflow_dispatch:
@@ -6,11 +6,126 @@ on:
     - cron: '*/10 * * * *'
 
 jobs:
-  demo:
+  print-status:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
-    steps: 
-      - name: Log time
+    steps:
+      - name: Fetch and Print Project Status
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_STATUS_PAT }}
+          GITHUB_USER: "himanshusingh2018"
+          PROJECT_NUMBER: 7
         run: |
-          current_date_time=$(date)
-          echo "Current date and time: $current_date_time"
+          set -euo pipefail
+
+          QUERY='
+          query($user: String!, $number: Int!) {
+            user(login: $user) {
+              projectV2(number: $number) {
+                title
+                items(first: 100) {
+                  nodes {
+                    fieldValueByName(name: "Status") {
+                      ... on ProjectV2ItemFieldSingleSelectValue {
+                        name
+                      }
+                    }
+                    content {
+                      ... on Issue {
+                        title
+                        url
+                      }
+                      ... on PullRequest {
+                        title
+                        url
+                      }
+                      ... on DraftIssue {
+                        title
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }'
+
+          # Fetch data from GitHub GraphQL API
+          RESPONSE=$(gh api graphql \
+            -F user="$GITHUB_USER" \
+            -F number="$PROJECT_NUMBER" \
+            -f query="$QUERY")
+
+          # Parse items into a structured JSON array
+          ITEMS_JSON=$(echo "$RESPONSE" | jq '[
+            .data.user.projectV2.items.nodes[]
+            | select(.content != null)
+            | {
+                status: (.fieldValueByName.name // "No Status"),
+                title: .content.title,
+                url: (.content.url // "")
+              }
+          ]')
+
+          # Helper function to print a category in plain text and markdown
+          format_category() {
+            local status_name="$1"
+            echo "$ITEMS_JSON" | jq -r --arg s "$status_name" '
+              map(select(.status == $s))
+              | if length == 0 then
+                  "  (No items)"
+                else
+                  map("  - " + .title + (if .url != "" then " (" + .url + ")" else "" end)) | join("\n")
+                end
+            '
+          }
+
+          CURRENT_TIME=$(date)
+
+          # --- 1. Print formatted output to console log ---
+          echo "================================================"
+          echo "PROJECT STATUS REPORT: Project #7"
+          echo "Run Time: ${CURRENT_TIME}"
+          echo "================================================"
+          echo ""
+          echo "📌 IN PROGRESS:"
+          format_category "In Progress"
+          echo ""
+          echo "📋 TODO:"
+          format_category "Todo"
+          echo ""
+          echo "✅ DONE:"
+          format_category "Done"
+          echo ""
+          echo "================================================"
+
+          # --- 2. Print visual summary to GitHub Actions UI ---
+          cat <<EOF >> $GITHUB_STEP_SUMMARY
+          ## 📊 Project Status: Project #7
+          **Run Date/Time:** ${CURRENT_TIME}
+
+          ### 📌 In Progress
+          $(echo "$ITEMS_JSON" | jq -r '
+            map(select(.status == "In Progress"))
+            | if length == 0 then "_No items in progress._"
+              else map("- [" + .title + "](" + (if .url != "" then .url else "#" end) + ")") | join("\n")
+              end
+          ')
+
+          ### 📋 Todo
+          $(echo "$ITEMS_JSON" | jq -r '
+            map(select(.status == "Todo"))
+            | if length == 0 then "_No items pending._"
+              else map("- [" + .title + "](" + (if .url != "" then .url else "#" end) + ")") | join("\n")
+              end
+          ')
+
+          ### ✅ Done
+          $(echo "$ITEMS_JSON" | jq -r '
+            map(select(.status == "Done"))
+            | if length == 0 then "_No completed items._"
+              else map("- [" + .title + "](" + (if .url != "" then .url else "#" end) + ")") | join("\n")
+              end
+          ')
+          EOF
