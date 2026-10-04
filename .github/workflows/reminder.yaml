@@ -118,15 +118,51 @@ jobs:
           </html>
           EOF
 
-      - name: Send Email via Gmail SMTP
-        uses: dawidd6/action-send-mail@v4
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          secure: false
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Project #7 Status Digest"
-          to: himanshu720@gmail.com
-          from: "GitHub Project Reminder <${{ secrets.SMTP_USERNAME }}>"
-          html_body: file://email_body.html
+      - name: Send Email via Gmail SSL
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASS: ${{ secrets.SMTP_PASSWORD }}
+          TO_EMAIL: "himanshu720@gmail.com"
+        run: |
+          python3 - << 'EOF'
+          import os
+          import sys
+          import smtplib
+          from email.mime.multipart import MIMEMultipart
+          from email.mime.text import MIMEText
+
+          username = os.environ.get("SMTP_USER", "").strip()
+          password = os.environ.get("SMTP_PASS", "").strip()
+          to_addr = os.environ.get("TO_EMAIL", "").strip()
+
+          if not username:
+              print("::error::SMTP_USERNAME secret is missing or empty in Repository Secrets!")
+              sys.exit(1)
+          if not password:
+              print("::error::SMTP_PASSWORD secret is missing or empty in Repository Secrets!")
+              sys.exit(1)
+
+          with open("email_body.html", "r", encoding="utf-8") as f:
+              html_content = f.read()
+
+          msg = MIMEMultipart("alternative")
+          msg["Subject"] = "Project #7 Status Digest"
+          msg["From"] = f"GitHub Project Reminder <{username}>"
+          msg["To"] = to_addr
+          msg.attach(MIMEText(html_content, "html", "utf-8"))
+
+          print(f"Connecting to smtp.gmail.com:465 for {username}...")
+          try:
+              server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+              server.login(username, password)
+              server.sendmail(username, [to_addr], msg.as_string())
+              server.quit()
+              print("✅ Email dispatched successfully!")
+          except smtplib.SMTPAuthenticationError as e:
+              print(f"::error::Gmail rejected login (code {e.smtp_code}): {e.smtp_error.decode('utf-8', errors='ignore')}")
+              print("Make sure your App Password is 16 letters with NO spaces, and 2-Step Verification is ON.")
+              sys.exit(1)
+          except Exception as e:
+              print(f"::error::SMTP Failure: {e}")
+              sys.exit(1)
+          EOF
