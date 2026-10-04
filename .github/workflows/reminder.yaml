@@ -1,18 +1,19 @@
-name: Print Work Status
+name: Daily Project Status Email Reminder
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '*/10 * * * *'
+    # 7:00 AM, 12:00 PM, 4:00 PM, and 8:00 PM EST (12:00, 17:00, 21:00, 01:00 UTC)
+    - cron: '0 12,17,21,1 * * *'
+  workflow_dispatch:
 
 jobs:
-  print-status:
+  send-reminder:
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
-      - name: Fetch and Print Status
+      - name: Fetch and Format Project Status
         env:
           GH_TOKEN: ${{ secrets.PROJECT_STATUS_PAT }}
           GITHUB_USER: "himanshusingh2018"
@@ -50,13 +51,11 @@ jobs:
             }
           }'
 
-          # Fetch Project items via GraphQL
           RESPONSE=$(gh api graphql \
             -F user="$GITHUB_USER" \
             -F number="$PROJECT_NUMBER" \
             -f query="$QUERY")
 
-          # Normalize items into a clean JSON array
           ITEMS_JSON=$(echo "$RESPONSE" | jq '[
             .data.user.projectV2.items.nodes[]
             | select(.content != null)
@@ -67,28 +66,14 @@ jobs:
               }
           ]')
 
-          # Helper function to generate numbered console text
-          render_console_list() {
+          render_html_list() {
             local filter_condition="$1"
             echo "$ITEMS_JSON" | jq -r --argjson cond "$filter_condition" '
               map(select(.status as $s | $cond | index($s)))
               | if length == 0 then
-                  "  (None)"
+                  "<li><em>None</em></li>"
                 else
-                  to_entries | map("  " + (.key + 1 | tostring) + ". " + .value.title + (if .value.url != "" then " (" + .value.url + ")" else "" end)) | join("\n")
-                end
-            '
-          }
-
-          # Helper function to generate numbered Markdown list
-          render_markdown_list() {
-            local filter_condition="$1"
-            echo "$ITEMS_JSON" | jq -r --argjson cond "$filter_condition" '
-              map(select(.status as $s | $cond | index($s)))
-              | if length == 0 then
-                  "_None_"
-                else
-                  to_entries | map((.key + 1 | tostring) + ". [" + .value.title + "](" + (if .value.url != "" then .value.url else "#" end) + ")") | join("\n")
+                  to_entries | map("<li>" + (.key + 1 | tostring) + ". " + (if .value.url != "" then "<a href=\"" + .value.url + "\">" + .value.title + "</a>" else .value.title end) + "</li>") | join("\n")
                 end
             '
           }
@@ -96,20 +81,52 @@ jobs:
           PENDING_FILTER='["Todo", "In Progress"]'
           COMPLETED_FILTER='["Done"]'
 
-          # 1. Output to runner console logs
-          echo "================================================"
-          echo "Pending"
-          render_console_list "$PENDING_FILTER"
-          echo ""
-          echo "Completed"
-          render_console_list "$COMPLETED_FILTER"
-          echo "================================================"
+          PENDING_HTML=$(render_html_list "$PENDING_FILTER")
+          COMPLETED_HTML=$(render_html_list "$COMPLETED_FILTER")
+          REPORT_DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
 
-          # 2. Output to GitHub Summary UI
-          cat <<EOF >> $GITHUB_STEP_SUMMARY
-          ### Pending
-          $(render_markdown_list "$PENDING_FILTER")
+          cat <<EOF > email_body.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #24292f; }
+              h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 6px; }
+              h3 { margin-top: 20px; margin-bottom: 6px; color: #0969da; }
+              ul { list-style-type: none; padding-left: 0; }
+              li { margin-bottom: 6px; }
+              a { color: #0969da; text-decoration: none; }
+              a:hover { text-decoration: underline; }
+              em { color: #57606a; }
+            </style>
+          </head>
+          <body>
+            <h2>Project #7 Status Report</h2>
+            <p><strong>Run Time:</strong> ${REPORT_DATE}</p>
 
-          ### Completed
-          $(render_markdown_list "$COMPLETED_FILTER")
+            <h3>Pending</h3>
+            <ul>
+              ${PENDING_HTML}
+            </ul>
+
+            <h3>Completed</h3>
+            <ul>
+              ${COMPLETED_HTML}
+            </ul>
+          </body>
+          </html>
           EOF
+
+      - name: Send Email via Gmail SMTP
+        uses: dawidd6/action-send-mail@v4
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Project #7 Status Digest"
+          to: himanshu720@gmail.com
+          from: "GitHub Project Reminder <${{ secrets.SMTP_USERNAME }}>"
+          html_body: file://email_body.html
